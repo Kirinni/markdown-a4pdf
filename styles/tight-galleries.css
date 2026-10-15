@@ -1,0 +1,11 @@
+/* 小补丁样式：喂给 md2a4pdf.py --css 用；写法是**追加**在内置样式之后（后写的优先）。
+
+这一类图值得单独收窄：一张图里竖排了好几张卡片、整张有 1.5～2 页高。放到 100% 宽时
+Chromium 会在页边界切开它，切开后那半页常常留白；缩到 82% 宽，跨页留白小一些，
+图里的字（卡片上那几行）照样看得清。
+
+注意 `src` 已经被换成 data URI，所以按 `src$="..."` 选不中——要用工具留下的
+`data-md-src`（里面是原始 URL）。
+*/
+img[data-md-src$="-states-flow.png"],
+img[data-md-src$="-states-attention.png"] { width: 82%; }

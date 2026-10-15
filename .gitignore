@@ -1,0 +1,10 @@
+# 产物：PDF / 中间 HTML / 改写出来的 md
+*.pdf
+*.html
+*.urls.md
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
