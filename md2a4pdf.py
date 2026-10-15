@@ -71,7 +71,10 @@ h3 { font-size: 12.5pt; color: #14416e; margin: 17px 0 6px;
 h4 { font-size: 11pt; margin: 13px 0 4px; break-after: avoid; page-break-after: avoid; }
 p { margin: 7px 0; }
 strong { color: #10243c; }
-a { color: #14416e; text-decoration: none; }
+a {
+  color: #0b57d0; text-decoration: underline;
+  text-decoration-color: #a9c0e0; text-decoration-thickness: 0.5pt; text-underline-offset: 2px;
+}
 hr { border: 0; border-top: 1px solid #e3e8ee; margin: 20px 0; }
 ul, ol { margin: 7px 0 7px 22px; padding: 0; }
 li { margin: 3px 0; }
