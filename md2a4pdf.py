@@ -42,6 +42,8 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
+from navigation import add_navigation
+
 BROWSERS = (
     Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
     Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),
@@ -351,7 +353,8 @@ async def print_pdf(browser: Path, html_path: Path, pdf_path: Path) -> None:
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     try:
-        ws_url = await wait_for_page(port)
+        # 只认我们自己那个页面：端口上如果有别的（残留的）浏览器实例，别把它的页面打印出来
+        ws_url = await wait_for_page(port, marker=html_path.parent.name)
         async with aiohttp.ClientSession() as session:
             async with session.ws_connect(ws_url, max_msg_size=0) as ws:
                 await cdp(ws, 1, "Page.enable")
@@ -371,17 +374,33 @@ async def print_pdf(browser: Path, html_path: Path, pdf_path: Path) -> None:
                     "footerTemplate": FOOTER,
                     **{f"margin{key.title()}": value for key, value in MARGIN_IN.items()},
                 })
+                try:  # 让浏览器自己退；退不掉下面还会强杀
+                    await asyncio.wait_for(cdp(ws, 4, "Browser.close"), timeout=5)
+                except Exception:  # noqa: BLE001 - 关不掉不影响结果
+                    pass
         pdf_path.write_bytes(base64.b64decode(result["data"]))
     finally:
-        process.terminate()
-        try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:  # pragma: no cover
-            process.kill()
+        _kill_browser(process)
         shutil.rmtree(profile, ignore_errors=True)
 
 
-async def wait_for_page(port: int, timeout_s: float = 30.0) -> str:
+def _kill_browser(process: subprocess.Popen) -> None:
+    """连子进程一起收掉：Chrome 的主进程常常早就退出了，光 terminate() 会留下实例。"""
+    try:
+        process.wait(timeout=5)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+        )
+    else:  # pragma: no cover - 非 Windows 兜底
+        process.kill()
+
+
+async def wait_for_page(port: int, *, marker: str, timeout_s: float = 30.0) -> str:
     import aiohttp
 
     deadline = time.monotonic() + timeout_s
@@ -390,12 +409,16 @@ async def wait_for_page(port: int, timeout_s: float = 30.0) -> str:
             try:
                 async with session.get(f"http://127.0.0.1:{port}/json/list") as response:
                     for target in await response.json():
-                        if target.get("type") == "page" and target.get("webSocketDebuggerUrl"):
+                        if target.get("type") != "page":
+                            continue
+                        if marker not in urllib.parse.unquote(target.get("url", "")):
+                            continue
+                        if target.get("webSocketDebuggerUrl"):
                             return target["webSocketDebuggerUrl"]
             except Exception:  # noqa: BLE001 - 浏览器还没起来
                 pass
             await asyncio.sleep(0.2)
-    raise SystemExit("等不到浏览器页面（CDP 没起来）")
+    raise SystemExit("等不到浏览器页面（CDP 没起来，或者那个端口被别的浏览器实例占着）")
 
 
 async def cdp(ws, message_id: int, method: str, params: dict | None = None) -> dict:
@@ -431,6 +454,11 @@ def main() -> int:
                         help="自定义样式：**追加**在内置样式之后（后写的优先）")
     parser.add_argument("--keep-html", type=Path, default=None, help="保留中间 HTML")
     parser.add_argument("--browser", type=Path, default=None, help="Chrome/Edge 可执行文件")
+    parser.add_argument(
+        "--no-nav",
+        action="store_true",
+        help="不补目录跳转与书签（默认补：目录行可点 + 左侧两级大纲）",
+    )
     args = parser.parse_args()
 
     md_path: Path = args.md.resolve()
@@ -472,6 +500,8 @@ def main() -> int:
                 args.keep_html.write_text(html, encoding="utf-8")
             asyncio.run(print_pdf(browser, html_path, pdf_path))
         print(f"OK  {pdf_path}（{pdf_path.stat().st_size / 1024 / 1024:.2f} MB，A4，页脚有页码）")
+        if not args.no_nav:
+            print("  " + add_navigation(pdf_path, md_path).summary())
         return 0
     finally:
         if local is not None:

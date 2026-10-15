@@ -1,2 +1,4 @@
 markdown-it-py>=3.0
 aiohttp>=3.9
+pypdf>=5.0
+pypdfium2>=4.30
